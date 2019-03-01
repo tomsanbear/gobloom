@@ -2,7 +2,6 @@ package bloom
 
 import (
 	"fmt"
-	"hash"
 	"math"
 
 	"github.com/damnever/bitarray"
@@ -23,7 +22,7 @@ type bloom struct {
 
 	// Private vars
 	numHashes    int
-	hashFuncs    []hash.Hash64
+	hashFuncs    []murmur3.Hash128
 	bitArraySize int
 	bitArray     *bitarray.BitArray
 }
@@ -50,9 +49,9 @@ func New(capacity int, errorRate float64) (bloom, error) {
 	baSize := optimalBitArraySize(float64(capacity), errorRate)
 	nHashes := optimalHashFunk(baSize, capacity)
 
-	hashers := make([]hash.Hash64, 0)
+	hashers := make([]murmur3.Hash128, 0)
 	for i := 0; i < nHashes; i++ {
-		hashers = append(hashers, murmur3.New64WithSeed(uint32(i)))
+		hashers = append(hashers, murmur3.New128WithSeed(uint32(capacity)))
 	}
 
 	b = bloom{
@@ -91,17 +90,22 @@ func (b bloom) Add(item string) error {
 			return fmt.Errorf("failed to hash the item, %v", err)
 		}
 
-		index := b.hashFuncs[i].Sum64() % uint64(b.bitArraySize)
+		indexPre, _ := b.hashFuncs[i].Sum128()
+		// fmt.Printf("indexPre: %v\n", indexPre)
+		index := indexPre % uint64(b.bitArraySize)
+		// fmt.Printf("index: %v\n", index)
 
 		// Insert to bit array
 		_, err = b.bitArray.Put(int(index), 1)
 		if err != nil {
 			return fmt.Errorf("failed to put bitarray item: %v", index)
 		}
+		b.hashFuncs[i].Reset()
 	}
 	return nil
 }
 
+// Check answers back whether the item is definitely not in the set (true) or might be in the set (false)
 func (b bloom) Check(item string) (bool, error) {
 	for i := 0; i < b.numHashes; i++ {
 		// Get the hash value
@@ -110,16 +114,21 @@ func (b bloom) Check(item string) (bool, error) {
 			return false, fmt.Errorf("failed to hash the item, %v", err)
 		}
 
-		index := b.hashFuncs[i].Sum64() % uint64(b.bitArraySize)
+		indexPre, _ := b.hashFuncs[i].Sum128()
+		// fmt.Printf("indexPre: %v\n", indexPre)
+		index := indexPre % uint64(b.bitArraySize)
+		// fmt.Printf("index: %v\n", index)
 
 		// Check for existence
 		res, err := b.bitArray.Get(int(index))
+		// fmt.Printf("res: %v\n", res)
 		if err != nil {
 			return false, fmt.Errorf("failed to check index, %v", err)
 		}
-		if res == 0 {
-			return false, nil
+		if res == 1 {
+			return true, nil
 		}
+		b.hashFuncs[i].Reset()
 	}
-	return true, nil
+	return false, nil
 }

@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/montanaflynn/stats"
+
 	"github.com/stretchr/testify/assert"
 )
 
@@ -61,35 +63,77 @@ func TestOptimalHashFunk(t *testing.T) {
 }
 
 func TestBloom(t *testing.T) {
-	sut, err := New(100, 0.001)
-	assert.NoError(t, err)
-
-	testCycles := 100
-
-	// Start the test
-	startTime := time.Now().UnixNano()
-
-	// Load every other entry
-	for i := 0; i < testCycles; i = i + 2 {
-		iAsString := strconv.Itoa(i) + "meow"
-		currentTime := time.Now().UnixNano()
-		err := sut.Add(iAsString)
-		currentTime2 := time.Now().UnixNano()
-		assert.NoError(t, err)
-		fmt.Printf("iter: %v, add item: \"%v\" took: %v ns\n", i, iAsString, currentTime2-currentTime)
+	tables := []struct {
+		testCycles   int
+		predictedCap int
+		errorRate    float64
+	}{
+		{10, 10, 0.01},
+		{100, 100, 0.01},
+		{1000, 1000, 0.01},
+		{10000, 10000, 0.01},
+		{1000000, 1000000, 0.01},
 	}
 
-	for i := 0; i < testCycles; i++ {
-		iAsString := strconv.Itoa(i) + "meow"
-		currentTime := time.Now().UnixNano()
-		ok, err := sut.Check(iAsString)
-		currentTime2 := time.Now().UnixNano()
+	for _, table := range tables {
+		// Setup for tracking performance across test runs
+		var putTimes []int64
+		var getTimes []int64
+
+		sut, err := New(table.predictedCap, table.errorRate)
 		assert.NoError(t, err)
-		fmt.Printf("iter: %v, get item: \"%v\", result: %v took: %v ns\n", i, iAsString, ok, currentTime2-currentTime)
+
+		// Start the test
+		startTime := time.Now().UnixNano()
+
+		// Load every other entry
+		for i := 0; i < table.testCycles; i = i + 2 {
+			iAsString := strconv.Itoa(i) + ".meow.com"
+			currentTime := time.Now().UnixNano()
+			err := sut.Add(iAsString)
+			currentTime2 := time.Now().UnixNano()
+			assert.NoError(t, err)
+			putTimes = append(putTimes, currentTime2-currentTime)
+		}
+
+		falsePositives := 0
+		for i := 0; i < table.testCycles; i++ {
+			iAsString := strconv.Itoa(i) + ".meow.com"
+			currentTime := time.Now().UnixNano()
+			ok, err := sut.Check(iAsString)
+			currentTime2 := time.Now().UnixNano()
+			if (i % 2) != 0 {
+				if ok == true {
+					falsePositives++
+				}
+			}
+			assert.NoError(t, err)
+			getTimes = append(getTimes, currentTime2-currentTime)
+		}
+
+		// Find the interesting stats for the test run
+		putStats := stats.LoadRawData(putTimes)
+		getStats := stats.LoadRawData(getTimes)
+
+		putMedian, err := putStats.Median()
+		assert.NoError(t, err)
+
+		getMedian, err := getStats.Median()
+		assert.NoError(t, err)
+
+		putVar, err := putStats.Variance()
+		assert.NoError(t, err)
+
+		getVar, err := getStats.Variance()
+		assert.NoError(t, err)
+
+		// End the test
+		endTime := time.Now().UnixNano()
+
+		// Reporting data
+		fmt.Printf("Test took: %v ns\n", endTime-startTime)
+		fmt.Printf("Setup: testCycles = %v, capacity = %v, desiredErrorRate = %v\n", table.testCycles, table.predictedCap, table.errorRate)
+		fmt.Printf("False positive rate was: %v\nPUT median: %v ns, variance: %v\n GET median %v ns, variance: %v\n", float64(falsePositives)/float64(table.testCycles), putMedian, putVar, getMedian, getVar)
 	}
 
-	// End the test
-	endTime := time.Now().UnixNano()
-
-	fmt.Printf("Test took: %v ns\n", endTime-startTime)
 }
