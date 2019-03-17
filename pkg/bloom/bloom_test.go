@@ -68,11 +68,10 @@ func TestBloom(t *testing.T) {
 		predictedCap int
 		errorRate    float64
 	}{
-		{10, 10, 0.01},
-		{100, 100, 0.01},
-		{1000, 1000, 0.01},
-		{10000, 10000, 0.01},
-		{1000000, 1000000, 0.01},
+		{10, 10, 0.001},
+		{100, 100, 0.001},
+		{1000, 1000, 0.001},
+		{10000, 10000, 0.001},
 	}
 
 	for _, table := range tables {
@@ -82,9 +81,6 @@ func TestBloom(t *testing.T) {
 
 		sut, err := New(table.predictedCap, table.errorRate)
 		assert.NoError(t, err)
-
-		// Start the test
-		startTime := time.Now().UnixNano()
 
 		// Load every other entry
 		for i := 0; i < table.testCycles; i = i + 2 {
@@ -127,11 +123,7 @@ func TestBloom(t *testing.T) {
 		getVar, err := getStats.Variance()
 		assert.NoError(t, err)
 
-		// End the test
-		endTime := time.Now().UnixNano()
-
 		// Reporting data
-		fmt.Printf("Test took: %v ns\n", endTime-startTime)
 		fmt.Printf("Setup: testCycles = %v, capacity = %v, desiredErrorRate = %v\n", table.testCycles, table.predictedCap, table.errorRate)
 		fmt.Printf("False positive rate was: %v\nPUT median: %v ns, variance: %v\n GET median %v ns, variance: %v\n", float64(falsePositives)/float64(table.testCycles), putMedian, putVar, getMedian, getVar)
 	}
